@@ -9,6 +9,7 @@ importPackage(com.google.appengine.api.datastore);
 importPackage(org.apache.jena.atlas.web);
 importPackage(org.apache.http.client.utils);
 importPackage(com.google.appengine.api.taskqueue);
+importPackage(com.google.appengine.api.blobstore);
 
 // hdt
 importPackage(org.rdfhdt.hdt.hdt);
@@ -24,6 +25,37 @@ apejs.urls = {
             return print(response).html(html);
         },
     },
+    '/upload': {
+        get: function(request, response) {
+            var blobstoreService = BlobstoreServiceFactory.getBlobstoreService();
+            var uploadUrl = blobstoreService.createUploadUrl("/upload")
+
+            var html = render("skins/upload.html");
+            html = html.replace('<%=%>', uploadUrl);
+
+            return print(response).html(html);
+            
+        },
+        post: function(request, response) {
+            var blobstoreService = BlobstoreServiceFactory.getBlobstoreService();
+            var blobs = blobstoreService.getUploadedBlobs(request);
+            var blobKey = blobs.get("myFile");
+
+            var servletContext = getServletConfig().getServletContext();
+
+            var blobStream = BlobstoreInputStream(blobKey);
+            var bufferedIn = new BufferedInputStream(blobStream);
+
+            var hdt = HDTManager.loadHDT(bufferedIn, null);
+            var graph = new HDTGraph(hdt);
+            var model = ModelFactory.createModelForGraph(graph);
+
+            System.out.println('from file');
+            servletContext.setAttribute('modelCache', model);
+            print(response).text(blobKey.getKeyString());
+        }
+
+    },
     '/sparql': {
         get: function(request, response) {
 
@@ -36,10 +68,18 @@ apejs.urls = {
                 return;
             }
 
-            var url = getServletConfig().getServletContext().getResource("/rdf/collecting-missions.hdt")
-            var file = new File(url.toURI());
-            var inputStream = new FileInputStream(file);
-            var bufferedIn = new BufferedInputStream(inputStream);
+            var query = new com.google.appengine.api.datastore.Query("__BlobInfo__"); 
+            var datastore = DatastoreServiceFactory.getDatastoreService(); 
+            var pq = datastore.prepare(query); 
+            var entList = pq.asList(FetchOptions.Builder.withLimit(1)); 
+            // get the first file in blobstore
+            var key = entList.get(0).getKey().getName();
+            var blobKey = new BlobKey(key);
+
+            var servletContext = getServletConfig().getServletContext();
+
+            var blobStream = BlobstoreInputStream(blobKey);
+            var bufferedIn = new BufferedInputStream(blobStream);
 
             var hdt = HDTManager.loadHDT(bufferedIn, null);
             var graph = new HDTGraph(hdt);
