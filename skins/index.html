@@ -1,0 +1,31 @@
+<form action="/sparql" method="GET" accept-charset="UTF-8">
+        <textarea name="query" cols="70" rows="30">prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> 
+prefix wgs84_pos: <http://www.w3.org/2003/01/geo/wgs84_pos#> 
+prefix dwc: <http://rs.tdwg.org/dwc/terms/> 
+prefix germplasm: <http://purl.org/germplasm/germplasmTerm#> 
+prefix germplasmType: <http://purl.org/germplasm/germplasmType#> 
+PREFIX cm: <http://data.bioversityinternational.org/collectingmissions/> 
+PREFIX cmMission: <http://data.bioversityinternational.org/collectingmissions/MISSIONS_SAMPLES_SITES/>
+
+
+SELECT * WHERE {
+?acc a cm:ACCESSIONS;
+      cm:ACCESSIONS\/AccessionNumber ?acceNumb;
+      cm:ACCESSIONS\/INSTCODE ?ipgriCode;
+      cm:ACCESSIONS\/NEW_ID_SAMPLE ?newIdSample .
+
+?sample cm:MISSIONS_SAMPLES_SITES\/NEW_ID_SAMPLE ?newIdSample;
+        cm:MISSIONS_SAMPLES_SITES\/Genus ?genus;
+        ?samplePredicate ?sampleObject.
+
+?inst cm:INSTITUTES\/INSTCODE ?ipgriCode;
+      cm:INSTITUTES\/FAOCODE ?instCode.
+
+
+}
+
+LIMIT 100</textarea>
+        <br>
+
+        <input type="submit" value="Get Results">
+  </form>
