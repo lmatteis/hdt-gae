@@ -9,6 +9,10 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.http.client.utils.URIBuilder;
+import org.apache.jena.atlas.web.AcceptList;
+import org.apache.jena.atlas.web.MediaRange;
+import org.apache.jena.riot.Lang;
+import org.apache.jena.riot.RDFLanguages;
 import org.rdfhdt.hdt.dictionary.Dictionary;
 import org.rdfhdt.hdt.enums.TripleComponentRole;
 import org.rdfhdt.hdt.exceptions.NotFoundException;
@@ -51,6 +55,28 @@ public class IndexServlet extends HttpServlet {
 
 
 	protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+		String acceptHeader = request.getHeader("Accept");
+        if(acceptHeader == null)
+            acceptHeader = "text/html";
+
+        // from accept header get best supported content type
+        AcceptList acceptList = new AcceptList(acceptHeader);
+        MediaRange firstAccept = acceptList.first();
+        String contentType = "";
+        if(firstAccept != null) {
+            contentType = firstAccept.getContentType();
+        } else {
+            contentType = "text/html";
+           
+        }
+
+
+        if(contentType.equals("text/html")) {
+            // show client and return
+        	request.getRequestDispatcher("/WEB-INF/client.jsp").forward(request, response);
+        	return;
+        }
+        
 		String s = request.getParameter("subject");
 		String p = request.getParameter("predicate");
 		String o = request.getParameter("object");
@@ -68,7 +94,20 @@ public class IndexServlet extends HttpServlet {
 			
 			readControls(request, model, triples.estimatedNumResults(), TRIPLESPERPAGE, page);
 			
-			model.write(response.getOutputStream(), "TURTLE");
+			
+			Lang lang = RDFLanguages.contentTypeToLang(contentType);
+			String langString = "";
+            if(lang == null) {
+                contentType = "text/turtle";
+                langString = "TURTLE";
+            } else {
+            	langString = lang.getName();
+            }
+
+            response.setContentType(contentType);
+            response.setHeader("Access-Control-Allow-Origin", "*");
+            response.setHeader("Cache-Control","public, max-age=3600");
+			model.write(response.getOutputStream(), langString);
 
 		} catch (NotFoundException e) {
 			// TODO Auto-generated catch block
