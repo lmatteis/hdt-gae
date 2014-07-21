@@ -73,8 +73,8 @@ public class IndexServlet extends HttpServlet {
 
         if(contentType.equals("text/html")) {
             // show client and return
-        	request.getRequestDispatcher("/WEB-INF/client.jsp").forward(request, response);
-        	return;
+        	//request.getRequestDispatcher("/WEB-INF/client.jsp").forward(request, response);
+        	//return;
         }
         
 		String s = request.getParameter("subject");
