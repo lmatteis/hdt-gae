@@ -1,5 +1,6 @@
 
 import java.io.*;
+import java.net.URISyntaxException;
 import java.util.*;
 
 import javax.servlet.ServletException;
@@ -7,6 +8,7 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.apache.http.client.utils.URIBuilder;
 import org.rdfhdt.hdt.dictionary.Dictionary;
 import org.rdfhdt.hdt.enums.TripleComponentRole;
 import org.rdfhdt.hdt.exceptions.NotFoundException;
@@ -53,7 +55,7 @@ public class IndexServlet extends HttpServlet {
 		String p = request.getParameter("predicate");
 		String o = request.getParameter("object");
 		
-		long TRIPLESPERPAGE = 10;
+		long TRIPLESPERPAGE = 100;
 		
 		final long page = Math.max(1, parseAsInteger(request.getParameter("page")));
 		final long limit = TRIPLESPERPAGE, 
@@ -61,17 +63,92 @@ public class IndexServlet extends HttpServlet {
 		
 
 		try {
-			Model model = searchHDT(s, p, o, offset, limit);
+			IteratorTripleID triples = searchHDT(s, p, o);
+			Model model = offsetLimit(triples, offset, limit);
 			
-			model.write(response.getOutputStream(), "N-TRIPLES");
+			readControls(request, model, triples.estimatedNumResults(), TRIPLESPERPAGE, page);
+			
+			model.write(response.getOutputStream(), "TURTLE");
 
-			
 		} catch (NotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (URISyntaxException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 	}
 	
+	private void readControls(HttpServletRequest request, Model model,
+			long totalItems, long itemsPerPage, long currentPage) throws URISyntaxException {
+		String uri = request.getScheme() + "://" +   // "http" + "://
+	             request.getServerName();
+		if(request.getServerPort() != 80) {
+	        uri += ":" + request.getServerPort();
+	    }
+		uri += request.getRequestURI();
+		String queryString = (request.getQueryString() != null ? "?" +
+                request.getQueryString() : "");;
+        String fullUri = uri + queryString;
+        URIBuilder firstPage = new URIBuilder(fullUri); 
+        firstPage.setParameter("page", "1");
+        URIBuilder previousPage = new URIBuilder(fullUri);
+        previousPage.setParameter("page", Long.toString(currentPage - 1));
+        URIBuilder nextPage = new URIBuilder(fullUri);
+        nextPage.setParameter("page", Long.toString(currentPage + 1));
+        
+        String controls = "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.\n"
+        		+ "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.\n"
+        		+ "@prefix owl: <http://www.w3.org/2002/07/owl#>.\n"
+        		+ "@prefix skos: <http://www.w3.org/2004/02/skos/core#>.\n"
+        		+ "@prefix xsd: <http://www.w3.org/2001/XMLSchema#>.\n"
+        		+ "@prefix dc: <http://purl.org/dc/terms/>.\n"
+        		+ "@prefix dcterms: <http://purl.org/dc/terms/>.\n"
+        		+ "@prefix dc11: <http://purl.org/dc/elements/1.1/>.\n"
+        		+ "@prefix foaf: <http://xmlns.com/foaf/0.1/>.\n"
+        		+ "@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#>.\n"
+        		+ "@prefix dbpedia: <http://dbpedia.org/resource/>.\n"
+        		+ "@prefix dbpedia-owl: <http://dbpedia.org/ontology/>.\n"
+        		+ "@prefix dbpprop: <http://dbpedia.org/property/>.\n"
+        		+ "@prefix hydra: <http://www.w3.org/ns/hydra/core#>.\n"
+        		+ "@prefix void: <http://rdfs.org/ns/void#>.\n"
+        		+ "@prefix : <"+uri+">.\n"
+        		+ "\n"
+        		+ "<"+uri+"#dataset> a void:Dataset, hydra:Collection;\n"
+        		+ "    void:subset <"+fullUri+">;\n"
+        		+ "    void:uriLookupEndpoint \""+uri+"{?subject,predicate,object}\";\n"
+        		+ "    hydra:search _:triplePattern.\n"
+        		+ "\n"
+        		+ "_:triplePattern hydra:template \""+uri+"{?subject,predicate,object}\";\n"
+        		+ "    hydra:mapping _:subject, _:predicate, _:object.\n"
+        		+ "\n"
+        		+ "_:subject hydra:variable \"subject\";\n"
+        		+ "    hydra:property rdf:subject.\n"
+        		+ "\n"
+        		+ "_:predicate hydra:variable \"predicate\";\n"
+        		+ "    hydra:property rdf:predicate.\n"
+        		+ "\n"
+        		+ "_:object hydra:variable \"object\";\n"
+        		+ "    hydra:property rdf:object.\n"
+        		+ "\n"
+        		+ "<"+fullUri+"> a hydra:Collection, hydra:PagedCollection;\n"
+        		+ "    hydra:totalItems \""+totalItems+"\"^^xsd:integer;\n"
+        		+ "    dcterms:source <"+uri+"#dataset>;\n"
+        		+ "    void:triples \""+totalItems+"\"^^xsd:integer;\n"
+        		+ "    hydra:itemsPerPage \""+itemsPerPage+"\"^^xsd:integer;\n"
+        		+ "    hydra:firstPage <"+firstPage +"> .";
+
+        if(currentPage > 1)
+        	controls += "<"+fullUri+"> hydra:previousPage <"+previousPage +"> .";
+
+        if(totalItems > (itemsPerPage * currentPage))
+        	controls += "<"+fullUri+"> hydra:nextPage <"+nextPage +"> .";
+
+        StringReader reader = new StringReader(controls);
+        model.read(reader, null, "TURTLE");
+	}
+
+
 	protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
 	}
 	
@@ -81,10 +158,11 @@ public class IndexServlet extends HttpServlet {
 		PreparedQuery pq = datastore.prepare(query); 
         List<Entity> entList = pq.asList(FetchOptions.Builder.withLimit(1)); 
         
-        // get the first file in blobstore
+        // get the first file in blob store
         Entity entity = entList.get(0);
         String key = entity.getKey().getName();
         BlobKey blobKey = new BlobKey(key);
+     
         
 		BlobstoreInputStream blobStream = new BlobstoreInputStream(blobKey);
         BufferedInputStream bufferedIn = new BufferedInputStream(blobStream);
@@ -93,15 +171,13 @@ public class IndexServlet extends HttpServlet {
         HDT hdt = HDTManager.loadHDT(bufferedIn, null);
         return hdt;
 	}
-	private Model searchHDT(String subject, String predicate, String object, final long offset, final long limit) throws IOException, NotFoundException {
+	private IteratorTripleID searchHDT(String subject, String predicate, String object) throws IOException, NotFoundException {
 		if(hdt == null) {
 			hdt = loadHDT();
 		}
-		if (offset < 0) throw new IndexOutOfBoundsException("offset");
-		if (limit  < 1) throw new IllegalArgumentException("limit");
+		
 
 		Dictionary dict = hdt.getDictionary();
-		NodeDictionary dictionary = new NodeDictionary(dict);
 		
 
 		// look up the result from the HDT datasource
@@ -111,14 +187,21 @@ public class IndexServlet extends HttpServlet {
         
 		final IteratorTripleID result = hdt.getTriples().search(new TripleID(subjectId, predicateId, objectId));
 
-
-		final Model triples = ModelFactory.createDefaultModel();
-
+		return result;
+	}
+	private Model offsetLimit(IteratorTripleID triples, final long offset, final long limit) {
+		if (offset < 0) throw new IndexOutOfBoundsException("offset");
+		if (limit  < 1) throw new IllegalArgumentException("limit");
+		
+		final Model model = ModelFactory.createDefaultModel();
+		Dictionary dict = hdt.getDictionary();
+		NodeDictionary dictionary = new NodeDictionary(dict);
+		
 		// try to jump directly to the offset
 		boolean atOffset;
-		if (result.canGoTo()) {
+		if (triples.canGoTo()) {
 			try {
-				result.goTo(offset);
+				triples.goTo(offset);
 				atOffset = true;
 			}
 			// if the offset is outside the bounds, this page has no matches
@@ -126,25 +209,25 @@ public class IndexServlet extends HttpServlet {
 		}
 		// if not possible, advance to the offset iteratively
 		else {
-			result.goToStart();
-			for (int i = 0; !(atOffset = i == offset) && result.hasNext(); i++)
-				result.next();
+			triples.goToStart();
+			for (int i = 0; !(atOffset = i == offset) && triples.hasNext(); i++)
+				triples.next();
 		}
 
 		// add `limit` triples to the result model
 		if (atOffset) {
-			for (int i = 0; i < limit && result.hasNext(); i++) {
-				TripleID tripleId = result.next();
+			for (int i = 0; i < limit && triples.hasNext(); i++) {
+				TripleID tripleId = triples.next();
 				Triple t = new Triple(
 						dictionary.getNode(tripleId.getSubject(), TripleComponentRole.SUBJECT),
 						dictionary.getNode(tripleId.getPredicate(), TripleComponentRole.PREDICATE),
 						dictionary.getNode(tripleId.getObject(), TripleComponentRole.OBJECT)
 					);
-				triples.add(triples.asStatement(t));
+				model.add(model.asStatement(t));
 			}
 				
 		}
-		return triples;
+		return model;
 
 	}
 	private int parseAsInteger(String value) {
